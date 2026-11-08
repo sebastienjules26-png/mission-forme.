@@ -16,6 +16,7 @@
   'use strict';
 
   const SCHEMA = 3;
+  const API_VERSION = '3.3.2';
   const DEFAULT_START = '2026-11-10'; // mardi : début du cycle de reprise
 
   /* ---------------------------------------------------------------- dates */
@@ -505,6 +506,52 @@
       guardOrFamily: list.filter(s => s.context !== 'perso').length
     };
   }
+  /** Lecture pédagogique des sept derniers jours : aucune progression automatique. */
+  function coachWeek(state, date) {
+    const start = addDays(date, -6);
+    const sessions = state.sessions.filter(s => s.date >= start && s.date <= date);
+    const runs = sessions.filter(isRun);
+    const hard = sessions.filter(s => (s.rpe !== null && s.rpe >= 8) || s.result === 'difficile');
+    // État du jour : ne pas appliquer artificiellement les règles du lendemain.
+    const currentReadiness = readiness(state, date);
+    const todaySessions = sessions.filter(s => s.date === date);
+    const painToday = todaySessions.some(s => s.pain === 'importante');
+    const lightPainToday = todaySessions.some(s => s.pain === 'legere');
+    const hardToday = todaySessions.some(s => (s.rpe !== null && s.rpe >= 9) || s.result === 'difficile');
+    const pleasure = sessions.filter(s => s.pleasure !== null);
+    const avgPleasure = pleasure.length ? pleasure.reduce((sum, s) => sum + s.pleasure, 0) / pleasure.length : null;
+    const runMinutes = runs.reduce((sum, s) => sum + s.duration, 0);
+    const allMinutes = sessions.reduce((sum, s) => sum + s.duration, 0);
+    const recentReadiness = currentReadiness;
+    let level = 'neutral', title = 'Construire la régularité', message = 'Ton programme reste indicatif. Privilégie une reprise facile, sans chercher à rattraper les séances manquées.';
+    if (recentReadiness.level === 'stop' || painToday) {
+      level = 'caution'; title = 'Priorité à la récupération';
+      message = 'Une douleur importante a été signalée. Évite la course et les mouvements douloureux tant que le problème n’est pas résolu.';
+    } else if (recentReadiness.level === 'recup') {
+      level = 'caution'; title = 'Récupérer avant de progresser';
+      message = 'Ton dernier ressenti indique un besoin de récupération. Aucun rattrapage nécessaire.';
+    } else if (recentReadiness.noProgress || recentReadiness.level === 'adapt' || lightPainToday || hardToday) {
+      level = 'caution'; title = 'Progression en pause';
+      message = 'Le programme tient compte de tes derniers ressentis et efforts : garde une intensité facile et ne cherche pas à augmenter la charge.';
+    } else if (hard.length >= 3) {
+      level = 'caution'; title = 'Plusieurs efforts exigeants';
+      message = 'Au moins deux efforts difficiles en sept jours : privilégie une séance facile ou du repos avant de remettre de l’intensité.';
+    } else if (avgPleasure !== null && avgPleasure <= 4) {
+      level = 'gentle'; title = 'Retrouver le plaisir';
+      message = 'Le plaisir déclaré est bas. Essaie une sortie plus courte, un parcours agréable ou une activité choisie librement.';
+    } else if (runs.length >= 2 && hard.length === 0) {
+      level = 'positive'; title = 'Une semaine régulière';
+      message = 'Tu as enregistré au moins deux sorties sans effort très dur. Continue progressivement, sans obligation d’augmenter la durée.';
+    } else if (sessions.length === 0) {
+      message = 'Aucune activité enregistrée sur les sept derniers jours. Tu peux reprendre avec une séance facile, sans pression.';
+    } else {
+      title = 'Chaque activité compte';
+      message = 'Les activités en garde, en famille et les sports complémentaires font partie de ta semaine. La régularité passe avant le volume.';
+    }
+    return { start, date, sessions: sessions.length, runs: runs.length, runMinutes, allMinutes,
+      hard: hard.length, pleasure: avgPleasure, level, title, message };
+  }
+
   function pace(s) {
     const d = s.running && s.running.distanceKm;
     if (!d) return null;
@@ -553,10 +600,10 @@
   }
 
   return {
-    SCHEMA, DEFAULT_START, ACTIVITIES, CONTEXTS, PAIN, SLEEP, FOCUS, TERRAINS, DAY_TYPES, FORCED, PHASES, TEST_UNITS, DAY_SHORT, DAY_LONG, MONTHS,
+    SCHEMA, API_VERSION, DEFAULT_START, ACTIVITIES, CONTEXTS, PAIN, SLEEP, FOCUS, TERRAINS, DAY_TYPES, FORCED, PHASES, TEST_UNITS, DAY_SHORT, DAY_LONG, MONTHS,
     toISO, parseISO, isISO, addDays, diffDays, weekday, mondayOf, todayISO, fmtDate, uid, isRun,
     normalizeSession, normalizeCheckin, normalizeState, defaultState,
     readiness, recentLongest, runCap, weekIndex, phaseOf, generatePlan, buildItem, nextItem, bonusForWeek, runsThisWeek,
-    weekSummary, pace, focusAdvice, fmtTestValue, parseTestValue, testStatus
+    weekSummary, coachWeek, pace, focusAdvice, fmtTestValue, parseTestValue, testStatus
   };
 });

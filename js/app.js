@@ -2,7 +2,11 @@
 (function () {
   'use strict';
   const E = window.MFEngine, S = window.MFStore;
-  const VERSION = '3.1.0';
+  const VERSION = '3.3.2';
+  if (!E || !S || E.API_VERSION !== VERSION || S.API_VERSION !== VERSION) {
+    document.getElementById('view').textContent = 'Mise à jour en cours : ferme puis rouvre MISSION FORME dans quelques minutes. Tes données restent sur cet appareil.';
+    return;
+  }
   const $ = sel => document.querySelector(sel);
 
   /* ------------------------------------------------------------ sécurité HTML */
@@ -53,6 +57,7 @@
 
   /** Applique une modification, enregistre, rafraîchit, et propose l'annulation. */
   function commit(mutate, message, { undo = true } = {}) {
+    if (loaded.readOnly) { toast('Modification bloquée : mets à jour l’application pour accéder à tes données.', { error: true }); return false; }
     const before = clone(state);
     mutate(state);
     const res = store.save(state);
@@ -186,6 +191,20 @@
       <div class="dots" aria-hidden="true">${dots}</div>
     </section>`;
   }
+  function coachCard() {
+    const c = E.coachWeek(state, today());
+    const pleasure = c.pleasure === null ? 'Non renseigné' : c.pleasure.toFixed(1).replace('.', ',') + '/10';
+    return h`<section class="card coach-card" aria-labelledby="coachWeekTitle">
+      <div class="row between"><h2 id="coachWeekTitle">Le regard du coach</h2><span class="pill">7 derniers jours</span></div>
+      <div class="coach-summary">
+        <div><strong>${c.runs}</strong><span>sortie(s) course</span></div>
+        <div><strong>${c.runMinutes} min</strong><span>course réalisée</span></div>
+        <div><strong>${pleasure}</strong><span>plaisir renseigné</span></div>
+      </div>
+      <div class="coach-message ${c.level}"><b>${c.title}</b><p>${c.message}</p></div>
+      <p class="small muted">Analyse fondée sur tes activités et ressentis enregistrés. Les valeurs absentes ne sont pas estimées. Aucun changement automatique du programme.</p>
+    </section>`;
+  }
   function viewToday() {
     const t = today(), it = E.nextItem(state, t), w = E.weekIndex(state, t), ph = E.phaseOf(Math.max(0, w));
     const recent = state.sessions.slice().sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0)).slice(0, 3);
@@ -198,6 +217,7 @@
         ${heroCard(it)}
         ${checkinCard()}
         ${weekCard()}
+        ${coachCard()}
         <section class="card soft">
           <div class="row between"><h2>Dernières activités</h2><button class="link" data-action="log">+ Ajouter</button></div>
           ${recent.length ? recent.map(entryRow) : h`<p class="muted">Rien d’enregistré pour l’instant. Après ta prochaine séance, touche « C’est fait ».</p>`}
@@ -469,7 +489,7 @@
       const d = E.addDays(it.origDate, i);
       if (d < t) continue;
       const day = state.days[d], busy = E.generatePlan(state, d, 1).some(p => p.date === d && p.origDate !== it.origDate);
-      const trial = structuredClone(state);
+      const trial = clone(state);
       if (d === it.origDate) delete trial.plan.moves[it.origDate]; else trial.plan.moves[it.origDate] = d;
       const preview = E.generatePlan(trial, E.addDays(d, -1), 3).find(p => p.origDate === it.origDate);
       const near = !!(preview && preview.proximityWarning);
@@ -529,6 +549,13 @@
   /* ------------------------------------------------------------ import / export */
   function exportData() {
     const now = Date.now();
+    if (loaded.readOnly) {
+      const raw = store.rawExport();
+      if (!raw) { toast('Sauvegarde impossible : données originales introuvables.', { error: true }); return; }
+      download(new Blob([raw], { type: 'application/json' }), 'mission_forme_donnees_originales_' + today() + '.json');
+      toast('Copie brute des données originales téléchargée, sans modification.');
+      return;
+    }
     state.settings.lastExportAt = now;
     const res = store.save(state);
     const json = S.exportJSON(state, now);
@@ -675,16 +702,17 @@
       confirmSheet({ title: 'Supprimer ce résultat ?', text: 'Tu pourras annuler juste après.', ok: 'Supprimer', danger: true, onOk: () => commit(st => { st.tests.results = st.tests.results.filter(r => r.id !== id); }, 'Résultat supprimé.') });
     },
     export: exportData,
-    import: () => { const inp = $('#importFile'); inp.value = ''; inp.click(); },
-    'import-merge': () => { const p = ui.pendingImport; closeSheet(); store.snapshotForUndo(state, 'import'); let added = 0; commit(st => { const m = S.merge(st, p.state); added = m.added; Object.assign(st, m.state); }, null); toast('Fusion terminée : ' + added + ' activité(s) ajoutée(s).', { action: 'Annuler', onAction: undoBig }); },
+    import: () => { if (loaded.readOnly) { toast('Import bloqué : mets à jour l’application.', { error: true }); return; } const inp = $('#importFile'); inp.value = ''; inp.click(); },
+    'import-merge': () => { if (loaded.readOnly) return; const p = ui.pendingImport; closeSheet(); store.snapshotForUndo(state, 'import'); let added = 0; commit(st => { const m = S.merge(st, p.state); added = m.added; Object.assign(st, m.state); }, null); toast('Fusion terminée : ' + added + ' activité(s) ajoutée(s).', { action: 'Annuler', onAction: undoBig }); },
     'import-replace': () => {
+      if (loaded.readOnly) return;
       const p = ui.pendingImport; closeSheet();
       confirmSheet({ title: 'Remplacer toutes tes données ?', text: 'Les données actuelles (' + state.sessions.length + ' activité(s)) seront remplacées par le fichier. Elles restent restaurables depuis les réglages.', ok: 'Remplacer', danger: true,
         onOk: () => { store.snapshotForUndo(state, 'import'); const keepExport = state.settings.lastExportAt; commit(st => { Object.keys(st).forEach(k => delete st[k]); Object.assign(st, clone(p.state)); st.settings.lastExportAt = st.settings.lastExportAt || keepExport; }, null); toast('Données remplacées.', { action: 'Annuler', onAction: undoBig }); } });
     },
-    'undo-big': () => undoBig(),
-    clear: () => confirmSheet({ title: 'Effacer toutes les données ?', text: 'Activités, agenda, objectifs et tests de cet appareil seront supprimés. Pense à exporter avant. Une restauration reste possible depuis les réglages.', ok: 'Tout effacer', danger: true,
-      onOk: () => { store.clearAll(state); state = E.defaultState(); const r = store.save(state); ui.saveError = r.ok ? null : r.error; render(); toast('Données effacées.', { action: 'Annuler', onAction: undoBig }); } }),
+    'undo-big': () => { if (loaded.readOnly) return; undoBig(); },
+    clear: () => { if (loaded.readOnly) { toast('Effacement bloqué : données d’une version plus récente.', { error: true }); return; } confirmSheet({ title: 'Effacer toutes les données ?', text: 'Activités, agenda, objectifs et tests de cet appareil seront supprimés. Pense à exporter avant. Une restauration reste possible depuis les réglages.', ok: 'Tout effacer', danger: true,
+      onOk: () => { const cleared = store.clearAll(state); if (!cleared.ok) { toast(cleared.error, { error: true }); return; } state = E.defaultState(); const r = store.save(state); ui.saveError = r.ok ? null : r.error; render(); toast('Données effacées.', { action: 'Annuler', onAction: undoBig }); } }); },
     slot: el => {
       const d = Number(el.dataset.d), slots = state.settings.slots.includes(d) ? state.settings.slots.filter(x => x !== d) : state.settings.slots.concat(d);
       if (slots.length < 1 || slots.length > 4) { toast('Choisis entre 1 et 4 jours.', { error: true }); return; }
@@ -758,7 +786,7 @@
     if (navigator.storage.persist) navigator.storage.persist().then(ok => { ui.persisted = ok; });
   }).catch(() => {});
   if ('serviceWorker' in navigator && location.protocol === 'https:') {
-    navigator.serviceWorker.register('sw.js').then(reg => {
+    navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).then(reg => {
       reg.addEventListener('updatefound', () => {
         const w = reg.installing;
         w && w.addEventListener('statechange', () => { if (w.state === 'installed' && navigator.serviceWorker.controller) toast('Nouvelle version disponible.', { action: 'Recharger', onAction: () => location.reload() }); });
