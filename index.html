@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; manifest-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <meta name="theme-color" content="#1c1118" media="(prefers-color-scheme: dark)">
+  <meta name="theme-color" content="#fff6ef" media="(prefers-color-scheme: light)">
+  <meta name="description" content="Coaching course à pied et préparation BSPP, adapté aux gardes. Données stockées uniquement sur l’appareil.">
+  <title>MISSION FORME</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <a class="skip" href="#view">Aller au contenu</a>
+  <div class="app">
+    <header class="topbar">
+      <button class="brand" data-action="go" data-view="today" aria-label="MISSION FORME, accueil">
+        <span class="brand-mark" aria-hidden="true"></span>
+        <span class="brand-name">MISSION <b>FORME</b></span>
+      </button>
+      <div class="topbar-right">
+        <span id="weekChip" class="chip-week"></span>
+        <button class="icon-btn" data-action="go" data-view="settings" aria-label="Réglages et sauvegardes"><span data-icon="settings"></span></button>
+      </div>
+    </header>
+
+    <nav class="tabbar" aria-label="Navigation principale">
+      <button data-action="go" data-view="today"><span data-icon="home"></span><span>Aujourd’hui</span></button>
+      <button data-action="go" data-view="program"><span data-icon="list"></span><span>Programme</span></button>
+      <button data-action="go" data-view="agenda"><span data-icon="calendar"></span><span>Agenda</span></button>
+      <button data-action="go" data-view="journal"><span data-icon="chart"></span><span>Journal</span></button>
+      <button data-action="go" data-view="goals"><span data-icon="target"></span><span>Objectifs</span></button>
+    </nav>
+
+    <main id="view" tabindex="-1" aria-live="polite"></main>
+
+    <button class="fab" data-action="log" aria-label="Enregistrer une activité"><span data-icon="plus"></span><span class="fab-label">Activité</span></button>
+  </div>
+
+  <div id="sheetRoot" class="sheet-root" hidden>
+    <div class="sheet-backdrop" data-action="close-sheet"></div>
+    <section class="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle">
+      <div class="sheet-grip" aria-hidden="true"></div>
+      <div id="sheetBody"></div>
+    </section>
+  </div>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <input id="importFile" type="file" accept="application/json,.json" hidden>
+
+  <noscript><p class="noscript">MISSION FORME a besoin de JavaScript.</p></noscript>
+  <script src="js/engine.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
