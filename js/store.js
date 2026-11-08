@@ -9,6 +9,7 @@
   else root.MFStore = api;
 })(typeof self !== 'undefined' ? self : this, function (E) {
   'use strict';
+  const API_VERSION = '3.3.2';
   const KEYS = {
     main: 'mission-forme-v3',
     prev: 'mission-forme-v3-prev',          // version précédente (restauration)
@@ -26,7 +27,14 @@
       const notices = [];
       const raw = read(KEYS.main);
       if (raw) {
-        try { return { state: E.normalizeState(JSON.parse(raw)).state, notices, migrated: false, error: null }; }
+        try {
+          const parsed = JSON.parse(raw);
+          if (Number.isInteger(parsed.schema) && parsed.schema > E.SCHEMA) {
+            notices.push('Données créées par une version plus récente : aucune modification autorisée. Mets à jour MISSION FORME.');
+            return { state: E.defaultState(), notices, migrated: false, error: 'future-schema', readOnly: true };
+          }
+          return { state: E.normalizeState(parsed).state, notices, migrated: false, error: null };
+        }
         catch (e) {
           try { storage.setItem(KEYS.corrupt, raw); } catch (_) { /* rien */ }
           const prev = read(KEYS.prev);
@@ -59,6 +67,11 @@
 
     /** Écrit l'état et vérifie la relecture. Ne lève jamais d'exception. */
     function save(state) {
+      try {
+        const existing = JSON.parse(read(KEYS.main) || 'null');
+        if (existing && Number.isInteger(existing.schema) && existing.schema > E.SCHEMA)
+          return { ok: false, error: 'Sauvegarde bloquée : ces données viennent d’une version plus récente de MISSION FORME.' };
+      } catch (_) { /* le contrôle de corruption reste assuré par load */ }
       let json;
       try { json = JSON.stringify(state); } catch (e) { return { ok: false, error: 'Données impossibles à enregistrer (format).' }; }
       try {
@@ -83,10 +96,18 @@
 
     /** Efface les données de l'appli (l'appelant DOIT avoir demandé confirmation). Garde un état d'annulation. */
     function clearAll(state) {
-      snapshotForUndo(state, 'effacement');
+      const raw = read(KEYS.main);
+      if (raw) {
+        let parsed;
+        try { parsed = JSON.parse(raw); } catch (_) { return { ok: false, error: 'Données illisibles : effacement bloqué.' }; }
+        if (Number.isInteger(parsed.schema) && parsed.schema > E.SCHEMA) return { ok: false, error: 'Effacement bloqué : données d’une version plus récente.' };
+      }
+      if (!snapshotForUndo(raw ? JSON.parse(raw) : state, 'effacement')) return { ok: false, error: 'Sauvegarde de secours impossible : effacement annulé.' };
       for (const k of [KEYS.main, KEYS.prev, KEYS.legacy, KEYS.legacyGoals, KEYS.corrupt]) { try { storage.removeItem(k); } catch (e) { /* rien */ } }
+      return { ok: true };
     }
-    return { load, save, snapshotForUndo, readUndo, clearUndo, clearAll, KEYS };
+    function rawExport() { return read(KEYS.main); }
+    return { load, save, snapshotForUndo, readUndo, clearUndo, clearAll, rawExport, KEYS };
   }
 
   function exportJSON(state, now = Date.now()) {
@@ -98,6 +119,7 @@
     if (typeof text !== 'string' || text.length > 5e6) throw new Error('Fichier trop volumineux ou vide.');
     let raw;
     try { raw = JSON.parse(text); } catch (e) { throw new Error('Ce fichier n’est pas un JSON valide.'); }
+    if (Number.isInteger(raw.schema) && raw.schema > E.SCHEMA) throw new Error('Sauvegarde provenant d’une version plus récente : importation refusée pour protéger tes données.');
     const { state, warnings } = E.normalizeState(raw);
     return { state, warnings, summary: { sessions: state.sessions.length, days: Object.keys(state.days).length, tests: state.tests.results.length, from: raw.schema === E.SCHEMA ? 'V3' : 'V2' } };
   }
@@ -120,5 +142,5 @@
     return { state: out, added };
   }
 
-  return { createStore, exportJSON, parseImport, merge, KEYS: { main: 'mission-forme-v3' } };
+  return { API_VERSION, createStore, exportJSON, parseImport, merge, KEYS: { main: 'mission-forme-v3' } };
 });
